@@ -1,6 +1,22 @@
 import { store } from '../src/lib/raven.ts';
 import * as dotenv from 'dotenv';
 
+type RavenMetadata = {
+  ['@collection']?: string;
+  ['@id']?: string;
+  ['@change-vector']?: string;
+};
+
+interface PlayerDoc {
+  playerId: number;
+  name: string;
+  team: string;
+  stats: unknown;
+  year: string;
+  timestamp: string;
+  ['@metadata']?: RavenMetadata;
+}
+
 dotenv.config();
 
 async function getTeams() {
@@ -26,19 +42,24 @@ async function ingest() {
   const teams = await getTeams();
 
   for (const team of teams) {
+    console.log(`📣 Ingesting players for team: ${team.name}`);
     const roster = await getRoster(team.id);
     for (const player of roster) {
       const playerData = await getPlayerStats(player.person.id);
       if (!playerData) continue;
 
-      await session.store({
-        _collection: 'players_raw',
+      const body: PlayerDoc = {
         playerId: player.person.id,
         name: player.person.fullName,
         team: team.name,
-        stats: playerData.stats,
+        year: playerData.stats[0].splits[0].season,
+        stats: playerData.stats[0].splits[0].stat,
         timestamp: new Date().toISOString(),
-      });
+        ['@metadata']: { ['@collection']: team.name },
+      };
+
+      await session.store(body);
+      console.log(`⚾ Saved: ${player.person.fullName} (${player.person.id})`);
     }
   }
 
