@@ -14,6 +14,7 @@ interface PlayerDoc {
   stats: unknown;
   year: string;
   timestamp: string;
+  playerType: string;
   ['@metadata']?: RavenMetadata;
 }
 
@@ -48,12 +49,16 @@ async function ingest() {
       const playerData = await getPlayerStats(player.person.id);
       if (!playerData) continue;
 
+      const statsData = playerData.stats[0].splits[0].stat;
+      const playerType = statsData.era ? 'pitcher' : 'batter';
+
       const body: PlayerDoc = {
         playerId: player.person.id,
         name: player.person.fullName,
         team: team.name,
         year: playerData.stats[0].splits[0].season,
-        stats: playerData.stats[0].splits[0].stat,
+        stats: statsData,
+        playerType: playerType,
         timestamp: new Date().toISOString(),
         ['@metadata']: { ['@collection']: team.name },
       };
