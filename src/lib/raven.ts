@@ -2,8 +2,9 @@ import * as dotenv from 'dotenv';
 import * as path from 'path';
 import * as fs from 'fs';
 import DocumentStore from 'ravendb';
+import { Stats_By_Team } from './indices.raven.ts';
 
-dotenv.config({ path: '.env' }); // 👈 Add this if not renamed yet
+dotenv.config({ path: '.env' });
 
 const certPath = path.resolve(process.cwd(), 'src/app/cert', process.env.RAVEN_CERT!);
 console.log("🔒 Using cert in API route:", certPath);
@@ -19,5 +20,12 @@ const store = new DocumentStore(
 );
 
 store.initialize();
+
+export const createIndices = async (store: DocumentStore) => {
+  console.log('Creating indices...');
+  const accumulatedStatsIndex = new Stats_By_Team();
+  await accumulatedStatsIndex.execute(store)
+  console.log('Indices successfully created!');
+}
 
 export { store };

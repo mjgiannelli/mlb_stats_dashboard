@@ -1,7 +1,7 @@
 import { store } from '../src/lib/raven.ts';
 import * as dotenv from 'dotenv';
 
-type RavenMetadata = {
+export type RavenMetadata = {
   ['@collection']?: string;
   ['@id']?: string;
   ['@change-vector']?: string;
@@ -11,7 +11,8 @@ interface PlayerDoc {
   playerId: number;
   name: string;
   team: string;
-  stats: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  stats: any;
   year: string;
   timestamp: string;
   playerType: string;
@@ -48,19 +49,20 @@ async function ingest() {
     for (const player of roster) {
       const playerData = await getPlayerStats(player.person.id);
       if (!playerData) continue;
+      if (!playerData.stats) continue;
 
-      const statsData = playerData.stats[0].splits[0].stat;
+      const statsData = playerData?.stats[0]?.splits[0]?.stat;
       const playerType = statsData.era ? 'pitcher' : 'batter';
 
       const body: PlayerDoc = {
         playerId: player.person.id,
         name: player.person.fullName,
         team: team.name,
-        year: playerData.stats[0].splits[0].season,
+        year: playerData?.stats[0]?.splits[0]?.season,
         stats: statsData,
         playerType: playerType,
         timestamp: new Date().toISOString(),
-        ['@metadata']: { ['@collection']: team.name },
+        ['@metadata']: { ['@collection']: 'Stats' },
       };
 
       await session.store(body);
@@ -75,3 +77,5 @@ async function ingest() {
 ingest().catch(err => {
   console.error('❌ Failed to ingest MLB data:', err);
 });
+
+export type { PlayerDoc }
