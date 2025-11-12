@@ -1,3 +1,4 @@
+import { DeleteByQueryOperation } from 'ravendb';
 import { store } from '../src/lib/raven.ts';
 import * as dotenv from 'dotenv';
 
@@ -11,6 +12,7 @@ interface PlayerDoc {
   playerId: number;
   name: string;
   team: string;
+  gamesRemaining: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   stats: any;
   year: string;
@@ -19,11 +21,25 @@ interface PlayerDoc {
   ['@metadata']?: RavenMetadata;
 }
 
+interface Game {
+  gameDate: string;
+}
+
+interface DateEntry {
+  date: string;
+  games: Game[];
+}
+
+interface ScheduleResponse {
+  dates: DateEntry[];
+}
+
 dotenv.config();
 
 async function getTeams() {
   const res = await fetch('https://statsapi.mlb.com/api/v1/teams?sportId=1');
   const data = await res.json();
+  console.log('team data: ', data);
   return data.teams;
 }
 
@@ -39,12 +55,35 @@ async function getPlayerStats(playerId: number) {
   return data.people?.[0];
 }
 
+async function getGamesRemaining(teamId: number): Promise<number> {
+  const today = new Date().toISOString().split('T')[0];
+  const endOfSeason = '2025-12-01';
+
+  const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=${teamId}&season=2025&startDate=${today}&endDate=${endOfSeason}&gameTypes=R`;
+
+  console.log(`🔍 Fetching regular season schedule for team ${teamId}: ${url}`);
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Failed to fetch schedule: ${resp.statusText}\nBody: ${text}`);
+  }
+
+  const data: ScheduleResponse = await resp.json();
+  const games: Game[] = data.dates.flatMap((date: DateEntry) => date.games);
+  return games.length;
+}
+
 async function ingest() {
+  await clearStatsCollection();
+
   const session = store.openSession();
+  
   const teams = await getTeams();
 
   for (const team of teams) {
     console.log(`📣 Ingesting players for team: ${team.name}`);
+    const teamGamesRemaining = await getGamesRemaining(team.id);
     const roster = await getRoster(team.id);
     for (const player of roster) {
       const playerData = await getPlayerStats(player.person.id);
@@ -58,6 +97,7 @@ async function ingest() {
         playerId: player.person.id,
         name: player.person.fullName,
         team: team.name,
+        gamesRemaining: teamGamesRemaining,
         year: playerData?.stats[0]?.splits[0]?.season,
         stats: statsData,
         playerType: playerType,
@@ -77,5 +117,11 @@ async function ingest() {
 ingest().catch(err => {
   console.error('❌ Failed to ingest MLB data:', err);
 });
+
+async function clearStatsCollection() {
+  const op = new DeleteByQueryOperation("from Stats"); // wipe collection
+  await store.operations.send(op);
+  console.log("🗑️ Cleared Stats collection before ingestion");
+}
 
 export type { PlayerDoc }
